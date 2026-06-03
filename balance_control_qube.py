@@ -12,19 +12,18 @@ import math
 import threading
 import numpy as np
 from pal.products.qube import QubeServo2, QubeServo3
-from pal.utilities.math import SignalGenerator, ddt_filter
+from pal.utilities.math import ddt_filter
 from pal.utilities.scope import Scope
 
+from constants import (
+    FREQUENCY, DATA_RATE, BALANCE_THRESHOLD, VOLTAGE_LIMIT,
+    THETA_DOT_CUTOFF, ALPHA_DOT_CUTOFF, K_GAINS,
+)
+
 # ---------------------------------------------------------------------------
-# Configuration constants
+# Script-level config
 # ---------------------------------------------------------------------------
-SIMULATION_TIME   = 30        # seconds
-FREQUENCY         = 500       # control loop Hz
-SCOPE_RATE        = 50        # max scope update Hz
-BALANCE_THRESHOLD = 10.0      # degrees — deadzone to activate LQR
-VOLTAGE_LIMIT     = 15.0      # volts — hardware saturation limit
-THETA_DOT_CUTOFF  = 50        # rad/s — derivative filter cutoff for theta
-ALPHA_DOT_CUTOFF  = 100       # rad/s — derivative filter cutoff for alpha
+SIMULATION_TIME = 30  # seconds
 
 # ---------------------------------------------------------------------------
 # Graceful shutdown via Ctrl-C
@@ -71,19 +70,15 @@ def control_loop():
     # Virtual only: 0 = DC motor attachment, 1 = pendulum attachment
     pendulum     = 1
 
-    dt       = 1.0 / FREQUENCY
-    count_max = FREQUENCY / SCOPE_RATE
-    count    = 0
+    dt        = 1.0 / FREQUENCY
+    count_max = FREQUENCY / DATA_RATE
+    count     = 0
+
+    K         = K_GAINS[qube_version]
+    QubeClass = QubeServo2 if qube_version == 2 else QubeServo3
 
     state_theta_dot = np.zeros(2, dtype=np.float64)
     state_alpha_dot = np.zeros(2, dtype=np.float64)
-
-    if qube_version == 2:
-        QubeClass = QubeServo2
-        K = np.array([-1.0000, 34.7500, -1.4950,  3.1110])
-    else:
-        QubeClass = QubeServo3
-        K = np.array([-1.2247, 24.9044, -0.6877,  3.1321])
 
     try:
         with QubeClass(hardware=hardware, pendulum=pendulum, frequency=FREQUENCY) as qube:
@@ -107,19 +102,17 @@ def control_loop():
                 alpha_dot, state_alpha_dot = ddt_filter(
                     alpha, state_alpha_dot, ALPHA_DOT_CUTOFF, dt)
 
-                # --- LQR controller ---
-                # error = reference - state  (reference = 0 for all states)
+                # --- LQR (reference = 0 for all states) ---
                 error = -np.array([theta, alpha, theta_dot, alpha_dot])
 
                 if alpha_deg > BALANCE_THRESHOLD:
                     voltage = 0.0
                 else:
-                    voltage = -np.dot(K, error)
-                    voltage = float(np.clip(voltage, -VOLTAGE_LIMIT, VOLTAGE_LIMIT))
+                    voltage = float(np.clip(-np.dot(K, error), -VOLTAGE_LIMIT, VOLTAGE_LIMIT))
 
                 qube.write_voltage(voltage)
 
-                # --- Scope update (rate-limited) ---
+                # --- Scope update (rate-limited to DATA_RATE) ---
                 count += 1
                 if count >= count_max:
                     scopePendulum.sample(timestamp, [alpha])
@@ -139,9 +132,11 @@ def control_loop():
 thread = threading.Thread(target=control_loop, daemon=True)
 thread.start()
 
-while thread.is_alive() and not _stop_event.is_set():
+# Keep refreshing scopes until the control thread actually finishes.
+# Looping on thread.is_alive() (not _stop_event) ensures a final refresh
+# happens during the thread's finally-block cleanup.
+while thread.is_alive():
     Scope.refreshAll()
     time.sleep(0.01)
 
-thread.join()
 input('Press Enter to exit.')
