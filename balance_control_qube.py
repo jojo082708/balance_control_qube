@@ -1,149 +1,147 @@
-## example balance_control_qube.py
-# This example does balance control of the Qube Servo's Pendulum attachment.
-# This example uses either a virtual or Physical Qube Servo 2 or Qube Servo 3 device,
-# in a task-based (time-based IO) mode where you do not have to handle timing yourself.
-# (task based mode is recommended for most applications).
+## balance_control_qube.py
+# Balance control of the Qube Servo's Pendulum attachment.
+# Supports virtual or physical Qube Servo 2 / Qube Servo 3 in task-based (time-based IO) mode.
 
-# IF USING HARDWARE, LIFT THE PENDULUM MANUALLY FOR THE CONTROLLER TO KICK IN
-# IF USING VIRTUAL, USE THE LIFT PENDULUM BUTTON IN QUANSER INTERACTIVE LABS
-# -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+# IF USING HARDWARE,  LIFT THE PENDULUM MANUALLY FOR THE CONTROLLER TO KICK IN
+# IF USING VIRTUAL,   USE THE LIFT PENDULUM BUTTON IN QUANSER INTERACTIVE LABS
+# -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-# imports
-from threading import Thread
 import signal
 import time
 import math
+import threading
 import numpy as np
 from pal.products.qube import QubeServo2, QubeServo3
 from pal.utilities.math import SignalGenerator, ddt_filter
 from pal.utilities.scope import Scope
 
-# Setup to enable killing the data generation thread using keyboard interrupts
-global KILL_THREAD
-KILL_THREAD = False
-def sig_handler(*args):
-    global KILL_THREAD
-    KILL_THREAD = True
-signal.signal(signal.SIGINT, sig_handler)
+# ---------------------------------------------------------------------------
+# Configuration constants
+# ---------------------------------------------------------------------------
+SIMULATION_TIME   = 30        # seconds
+FREQUENCY         = 500       # control loop Hz
+SCOPE_RATE        = 50        # max scope update Hz
+BALANCE_THRESHOLD = 10.0      # degrees — deadzone to activate LQR
+VOLTAGE_LIMIT     = 15.0      # volts — hardware saturation limit
+THETA_DOT_CUTOFF  = 50        # rad/s — derivative filter cutoff for theta
+ALPHA_DOT_CUTOFF  = 100       # rad/s — derivative filter cutoff for alpha
 
+# ---------------------------------------------------------------------------
+# Graceful shutdown via Ctrl-C
+# ---------------------------------------------------------------------------
+_stop_event = threading.Event()
 
-#region: Setup
-simulationTime = 30 # will run for 30 seconds
-color = np.array([0, 1, 0], dtype=np.float64)
+def _sig_handler(*_args):
+    _stop_event.set()
 
+signal.signal(signal.SIGINT, _sig_handler)
 
+# ---------------------------------------------------------------------------
+# Scopes
+# ---------------------------------------------------------------------------
 scopePendulum = Scope(
-    title='Pendulum encoder - alpha (rad)',
+    title='Pendulum angle - alpha (rad)',
     timeWindow=10,
     xLabel='Time (s)',
     yLabel='Position (rad)')
-scopePendulum.attachSignal(name='Pendulum - alpha (rad)',  width=1)
+scopePendulum.attachSignal(name='alpha (rad)', width=1)
 
 scopeBase = Scope(
-    title='Base encoder - theta (rad)',
+    title='Base angle - theta (rad)',
     timeWindow=10,
     xLabel='Time (s)',
     yLabel='Position (rad)')
-scopeBase.attachSignal(name='Base - theta (rad)',  width=1)
+scopeBase.attachSignal(name='theta (rad)', width=1)
 
 scopeVoltage = Scope(
     title='Motor Voltage',
     timeWindow=10,
     xLabel='Time (s)',
-    yLabel='Voltage (volts)')
-scopeVoltage.attachSignal(name='Voltage',  width=1)
+    yLabel='Voltage (V)')
+scopeVoltage.attachSignal(name='Voltage (V)', width=1)
 
-#endregion
 
-# Code to control the Qube Hardware
-# CHANGE qubeVersion, hardware and pendulum VARIABLES FOR DIFFERENT SETUPS
+# ---------------------------------------------------------------------------
+# Control loop
+# ---------------------------------------------------------------------------
 def control_loop():
+    # CHANGE THESE FOR YOUR SETUP
+    qube_version = 3   # 2 or 3
+    hardware     = 1   # 0 = virtual, 1 = physical
+    # Virtual only: 0 = DC motor attachment, 1 = pendulum attachment
+    pendulum     = 1
 
-    # set as 2 or 3 if using a Qube Servo 2 or 3 respectively
-    qubeVersion = 3
+    dt       = 1.0 / FREQUENCY
+    count_max = FREQUENCY / SCOPE_RATE
+    count    = 0
 
-    # Set as 0 if using virtual Qube Servo
-    # Set as 1 if using physical Qube Servo
-    hardware = 1
+    state_theta_dot = np.zeros(2, dtype=np.float64)
+    state_alpha_dot = np.zeros(2, dtype=np.float64)
 
-    # Only matters when using virtual Qube.
-    # Set as 0 for virtual DC Motor and 1 for virtual pendulum
-    # KEEP AS 1, THIS EXAMPLE USES A PENDULUM
-    # not important if using virtual
-    pendulum = 1
-
-
-    frequency = 500# Hz
-    state_theta_dot = np.array([0,0], dtype=np.float64)
-    state_alpha_dot = np.array([0,0], dtype=np.float64)
-
-    # Limit sample rate for scope to 50 hz
-    countMax = frequency / 50
-    count = 0
-
-    if qubeVersion == 2:
+    if qube_version == 2:
         QubeClass = QubeServo2
-        K = np.array([-1, 34.75, -1.495, 3.111])
+        K = np.array([-1.0000, 34.7500, -1.4950,  3.1110])
     else:
         QubeClass = QubeServo3
-        K = np.array([-1.2247, 24.9044, -0.6877, 3.1321])
+        K = np.array([-1.2247, 24.9044, -0.6877,  3.1321])
 
-    with QubeClass(hardware=hardware, pendulum=pendulum, frequency=frequency) as myQube:
+    try:
+        with QubeClass(hardware=hardware, pendulum=pendulum, frequency=FREQUENCY) as qube:
+            start_time = time.time()
 
-        startTime = 0
-        timeStamp = 0
-        def elapsed_time():
-            return time.time() - startTime
-        startTime = time.time()
+            while not _stop_event.is_set():
+                qube.read_outputs()
 
-        while timeStamp < simulationTime and not KILL_THREAD:
+                timestamp = time.time() - start_time
+                if timestamp >= SIMULATION_TIME:
+                    break
 
-            # Read sensor information
-            myQube.read_outputs()
+                # --- State estimation ---
+                theta   = qube.motorPosition * -1
+                alpha_f = qube.pendulumPosition
+                alpha   = np.mod(alpha_f, 2 * np.pi) - np.pi
+                alpha_deg = abs(math.degrees(alpha))
 
-            theta = myQube.motorPosition * -1
-            alpha_f =  myQube.pendulumPosition
-            alpha = np.mod(alpha_f, 2*np.pi) - np.pi
-            alpha_degrees = abs(math.degrees(alpha))
+                theta_dot, state_theta_dot = ddt_filter(
+                    theta, state_theta_dot, THETA_DOT_CUTOFF, dt)
+                alpha_dot, state_alpha_dot = ddt_filter(
+                    alpha, state_alpha_dot, ALPHA_DOT_CUTOFF, dt)
 
-            # Calculate angular velocities with filter of 50 and 100 rad
-            theta_dot, state_theta_dot = ddt_filter(theta, state_theta_dot, 50, 1/frequency)
-            alpha_dot, state_alpha_dot = ddt_filter(alpha, state_alpha_dot, 100, 1/frequency)
+                # --- LQR controller ---
+                # error = reference - state  (reference = 0 for all states)
+                error = -np.array([theta, alpha, theta_dot, alpha_dot])
 
-            command_deg = 0
+                if alpha_deg > BALANCE_THRESHOLD:
+                    voltage = 0.0
+                else:
+                    voltage = -np.dot(K, error)
+                    voltage = float(np.clip(voltage, -VOLTAGE_LIMIT, VOLTAGE_LIMIT))
 
-            states = command_deg*np.array([np.pi/180, 0, 0, 0]) - np.array([theta, alpha, theta_dot, alpha_dot])
+                qube.write_voltage(voltage)
 
-            if alpha_degrees > 10:
-                voltage = 0
-            else:
-                voltage = -1*np.dot(K, states)
+                # --- Scope update (rate-limited) ---
+                count += 1
+                if count >= count_max:
+                    scopePendulum.sample(timestamp, [alpha])
+                    scopeBase.sample(timestamp, [theta])
+                    scopeVoltage.sample(timestamp, [voltage])
+                    count = 0
 
-            # # Write commands
-            myQube.write_voltage(voltage)
-
-            # Plot to scopes
-            count += 1
-            if count >= countMax:
-                scopePendulum.sample(timeStamp, [states[1]])
-                scopeBase.sample(timeStamp, [states[0]])
-                scopeVoltage.sample(timeStamp,[voltage])
-                count = 0
-
-            timeStamp = elapsed_time()
-
+    except Exception as exc:
+        print(f'\n[control_loop] Error: {exc}')
+    finally:
+        _stop_event.set()
 
 
-# Setup data generation thread and run until complete
-thread = Thread(target=control_loop)
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+thread = threading.Thread(target=control_loop, daemon=True)
 thread.start()
 
-while thread.is_alive() and (not KILL_THREAD):
-
-    # This must be called regularly or the scope windows will freeze
-    # Must be called in the main thread.
+while thread.is_alive() and not _stop_event.is_set():
     Scope.refreshAll()
     time.sleep(0.01)
 
-
-input('Press the enter key to exit.')
+thread.join()
+input('Press Enter to exit.')
