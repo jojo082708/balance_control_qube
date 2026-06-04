@@ -10,6 +10,7 @@ VOLTAGE_LIMIT     = 15.0   # V   — output saturation limit
 THETA_DOT_CUTOFF  = 50     # rad/s — derivative filter cutoff for theta
 ALPHA_DOT_CUTOFF  = 100    # rad/s — derivative filter cutoff for alpha
 PLOT_WINDOW       = 10     # s   — scrolling plot history length
+THETA_LIMIT       = 3.14159265358979  # rad — arm safety stop (≈ ±180°, adjust per hardware)
 
 K_GAINS = {
     2: np.array([-1.0000, 34.7500, -1.4950,  3.1110]),
