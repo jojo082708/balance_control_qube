@@ -17,7 +17,7 @@ from pal.utilities.scope import Scope
 
 from constants import (
     FREQUENCY, DATA_RATE, BALANCE_THRESHOLD, VOLTAGE_LIMIT,
-    THETA_DOT_CUTOFF, ALPHA_DOT_CUTOFF, K_GAINS,
+    THETA_DOT_CUTOFF, ALPHA_DOT_CUTOFF, THETA_LIMIT, K_GAINS,
 )
 
 # ---------------------------------------------------------------------------
@@ -79,6 +79,7 @@ def control_loop():
 
     state_theta_dot = np.zeros(2, dtype=np.float64)
     state_alpha_dot = np.zeros(2, dtype=np.float64)
+    was_balancing   = False
 
     try:
         with QubeClass(hardware=hardware, pendulum=pendulum, frequency=FREQUENCY) as qube:
@@ -95,20 +96,36 @@ def control_loop():
                 theta   = qube.motorPosition * -1
                 alpha_f = qube.pendulumPosition
                 alpha   = np.mod(alpha_f, 2 * np.pi) - np.pi
-                alpha_deg = abs(math.degrees(alpha))
+                alpha_deg    = abs(math.degrees(alpha))
+                is_balancing = alpha_deg <= BALANCE_THRESHOLD
+
+                # P1: Bumpless transfer — reset filter states on inactive → active transition
+                # so the derivative spike from large swings doesn't carry into LQR activation
+                if is_balancing and not was_balancing:
+                    state_theta_dot[:] = 0.0
+                    state_alpha_dot[:] = 0.0
 
                 theta_dot, state_theta_dot = ddt_filter(
                     theta, state_theta_dot, THETA_DOT_CUTOFF, dt)
+                # P2: Differentiate unwrapped alpha_f — avoids ±2π discontinuity spikes
                 alpha_dot, state_alpha_dot = ddt_filter(
-                    alpha, state_alpha_dot, ALPHA_DOT_CUTOFF, dt)
+                    alpha_f, state_alpha_dot, ALPHA_DOT_CUTOFF, dt)
+
+                was_balancing = is_balancing
 
                 # --- LQR (reference = 0 for all states) ---
-                error = -np.array([theta, alpha, theta_dot, alpha_dot])
-
-                if alpha_deg > BALANCE_THRESHOLD:
+                if not is_balancing:
                     voltage = 0.0
                 else:
+                    error = -np.array([theta, alpha, theta_dot, alpha_dot])
                     voltage = float(np.clip(-np.dot(K, error), -VOLTAGE_LIMIT, VOLTAGE_LIMIT))
+
+                # P3: Arm angle boundary — zero motor and abort if arm exceeds safe range
+                if abs(theta) > THETA_LIMIT:
+                    print(f'\n[SAFETY] theta = {math.degrees(theta):.1f}° exceeded '
+                          f'±{math.degrees(THETA_LIMIT):.0f}° limit — motor stopped.')
+                    qube.write_voltage(0.0)
+                    break
 
                 qube.write_voltage(voltage)
 
