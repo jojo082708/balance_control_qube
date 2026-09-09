@@ -70,38 +70,35 @@ class DerivativeEstimator:
 
 def pendulum_energy(alpha: float, alpha_dot: float) -> float:
     """
-    E = 0.5·Jp·alpha_dot² + Mp·g·lp·cos(alpha)，於 alpha=0（正上方）最大。
+    擺桿能量，與 Åström & Furuta (1996, "Swinging Up a Pendulum by Energy
+    Control", Eq. 2) 定義完全一致：
 
-    與 Åström & Furuta (1996, "Swinging Up a Pendulum by Energy Control",
-    Eq. 2) 的 E = ½Jθ̇² + mgl(cosθ − 1) 相差一個常數 mgl：該文獻取 alpha=0
-    （正上方）時 E=0 為參考零點，本函式則直接回傳未平移的物理能量，兩者的
-    「能量誤差」在代數上完全等價（見 swing_up_voltage 推導）。
+        E = ½·Jp·alpha_dot² + Mp·g·lp·(cos(alpha) − 1)
+
+    以 alpha=0（正上方）為零點：E=0 於正上方靜止，E=−2·Mp·g·lp 於下垂靜止
+    （alpha=±π）。
     """
     return (0.5 * PENDULUM_INERTIA * alpha_dot ** 2
-            + PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS * math.cos(alpha))
+            + PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS
+            * (math.cos(alpha) - 1.0))
 
 
 def swing_up_voltage(alpha: float, alpha_dot: float) -> float:
     """
-    能量法起擺（Åström & Furuta, 1996, Eq. 8 的飽和控制律）：
+    能量法起擺，控制律與 Åström & Furuta (1996) Eq. 8 完全一致：
 
         u = sat_{nk}( k·(E − E0)·sign(alpha_dot·cos(alpha)) )
 
-    文獻中 alpha=0（正上方）能量取 E0=0 為參考零點；本模組的 pendulum_energy()
-    改用未平移的物理能量（相差常數 E_ref = Mp·g·lp），故 (E − E0) = −(E_ref − E)，
-    展開後得到本函式實際計算的形式：
-
-        voltage = sat( −μ·(E_ref − E)·sign(alpha_dot·cos(alpha)) )
-
-    即 SWINGUP_DIRECTION_SIGN 的理論正確值為 -1.0（對應文獻的能量收斂方向），
-    此為 config.py 的預設值。若實體硬體的編碼器 / 馬達接線極性相反導致起擺
-    方向錯誤，才需要改為 +1.0（純屬硬體接線問題，與此處的能量控制推導無關）。
+    E0 = 0（目標能量：擺桿靜止於正上方）。SWINGUP_GAIN 對應文獻中的 k，
+    SWINGUP_VOLTAGE_LIMIT 對應飽和界線 nk。SWINGUP_DIRECTION_SIGN 純為
+    硬體極性修正項（文獻中 θ 的正方向取決於編碼器 / 馬達實際接線），與
+    上式的能量控制推導本身無關，預設值 +1.0 即為文獻公式的直接對應。
     """
-    E_ref = PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS
-    energy_error = E_ref - pendulum_energy(alpha, alpha_dot)
+    E0 = 0.0
+    E  = pendulum_energy(alpha, alpha_dot)
 
     direction = 1.0 if (alpha_dot * math.cos(alpha)) >= 0 else -1.0
-    voltage = SWINGUP_DIRECTION_SIGN * SWINGUP_GAIN * energy_error * direction
+    voltage = SWINGUP_DIRECTION_SIGN * SWINGUP_GAIN * (E - E0) * direction
 
     return max(-SWINGUP_VOLTAGE_LIMIT, min(SWINGUP_VOLTAGE_LIMIT, voltage))
 

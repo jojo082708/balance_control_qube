@@ -251,9 +251,15 @@ class TestWrapAngle:
 # ── control/pendulum.py — swing-up / balance / eligibility ─────────────────
 
 class TestPendulumEnergy:
-    def test_energy_max_at_top_with_zero_velocity(self):
+    def test_energy_zero_at_top_with_zero_velocity(self):
+        # Matches Astrom & Furuta (1996) Eq. 2: E=0 at the top equilibrium.
         e = pendulum_energy(0.0, 0.0)
-        assert e == pytest.approx(PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS)
+        assert e == pytest.approx(0.0)
+
+    def test_energy_at_bottom_is_minus_two_mgl(self):
+        # Matches Astrom & Furuta (1996): E=-2mgl in the downward position.
+        e_bottom = pendulum_energy(math.pi, 0.0)
+        assert e_bottom == pytest.approx(-2 * PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS)
 
     def test_energy_lower_at_bottom(self):
         e_top    = pendulum_energy(0.0, 0.0)

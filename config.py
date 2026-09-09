@@ -47,12 +47,14 @@ GRAVITY              = 9.81                                   # [m/s²]
 # 已於 QUBE-Servo 3 實體硬體驗證（沿用原 balance_control_qube.py 之增益）
 BALANCE_K = np.array([-1.2247, 24.9044, -0.6877, 3.1321])
 
-# 起擺（能量法, energy-based swing-up — Åström & Furuta 1996, Eq. 8）
-SWINGUP_GAIN            = 40.0   # μ  能量誤差 → 電壓增益（對應文獻中的 k）
-SWINGUP_VOLTAGE_LIMIT   = 3.0    # [V] 起擺期間電壓飽和上限（低於平衡/阻抗上限，降低對機構的衝擊）
-# 理論正確值為 -1.0（見 control/pendulum.py::swing_up_voltage 的推導）。
-# 僅當實體硬體編碼器 / 馬達接線極性相反、導致起擺方向錯誤時才改為 +1.0。
-SWINGUP_DIRECTION_SIGN  = -1.0
+# 起擺（能量法, energy-based swing-up）
+# 控制律與 Åström & Furuta (1996, "Swinging Up a Pendulum by Energy
+# Control") Eq. 8 完全一致：u = sat_nk( k·(E-E0)·sign(alpha_dot·cos(alpha)) )
+SWINGUP_GAIN            = 40.0   # k  能量誤差 → 電壓增益
+SWINGUP_VOLTAGE_LIMIT   = 3.0    # [V] 起擺期間電壓飽和上限 nk（低於平衡/阻抗上限，降低對機構的衝擊）
+# 純屬硬體極性修正項（文獻中 θ 的正方向取決於編碼器/馬達實際接線），與能量
+# 控制律的推導本身無關；+1.0 即為文獻公式的直接對應。若實測起擺方向相反才改為 -1.0。
+SWINGUP_DIRECTION_SIGN  = 1.0
 
 # 倒單擺微分濾波器截止頻率 [Hz]
 FC_THETA_DOT = 50.0

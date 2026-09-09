@@ -184,10 +184,11 @@ PENDULUM_LENGTH = 0.129   # Lp 擺桿長度 [m]
 BALANCE_K = np.array([-1.2247, 24.9044, -0.6877, 3.1321])  # LQR 平衡增益
 ```
 
-> **注意**：起擺律採用 Åström & Furuta (1996, *Swinging Up a Pendulum by
-> Energy Control*) 已發表並驗證的能量控制律，`SWINGUP_DIRECTION_SIGN` 的理論
-> 正確值為 `-1.0`（已為預設值，推導見 `control/pendulum.py::swing_up_voltage`）。
-> 僅當實體硬體編碼器 / 馬達接線極性相反、導致起擺方向錯誤時才需改為 `1.0`。
+> **注意**：起擺律與能量函式現在逐項對應 Åström & Furuta (1996,
+> *Swinging Up a Pendulum by Energy Control*) 的 Eq. 2 / Eq. 8，
+> `SWINGUP_DIRECTION_SIGN` 預設 `1.0` 即為文獻公式的直接對應，純粹是
+> 硬體極性修正項。僅當實體硬體編碼器 / 馬達接線極性相反、導致起擺方向
+> 錯誤時才需改為 `-1.0`。
 
 ---
 
