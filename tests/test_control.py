@@ -20,6 +20,7 @@ from control.pendulum  import (
 from config import (
     PENDULUM_MASS, GRAVITY, PENDULUM_COM_RADIUS,
     SWINGUP_VOLTAGE_LIMIT, PENDULUM_VOLTAGE_LIMIT,
+    PENDULUM_ENGAGE_ANGLE_DEG, PENDULUM_ENGAGE_RATE_RADS,
 )
 
 
@@ -307,6 +308,26 @@ class TestSwitchEligibility:
         # Rate ok, angle too large
         assert is_switch_eligible(math.radians(10.0), 0.1,
                                   angle_tol_deg=5.0, rate_tol_rads=0.5) is False
+
+    def test_fast_pass_through_top_is_not_engage_eligible(self):
+        # Regression: real hardware log showed the pendulum flying past the
+        # top at ~42 rad/s while within the +-10deg engage angle window; an
+        # angle-only check wrongly treated that as "caught" and handed off
+        # to the LQR mid-swing, which then fought the fast pendulum instead
+        # of catching it -- preventing swing-up from ever succeeding.
+        alpha = math.radians(-5.45)
+        alpha_dot = 42.29
+        assert is_near_top(alpha, PENDULUM_ENGAGE_ANGLE_DEG) is True
+        assert is_switch_eligible(alpha, alpha_dot,
+                                  PENDULUM_ENGAGE_ANGLE_DEG,
+                                  PENDULUM_ENGAGE_RATE_RADS) is False
+
+    def test_slow_near_top_is_engage_eligible(self):
+        alpha = math.radians(3.0)
+        alpha_dot = 0.5
+        assert is_switch_eligible(alpha, alpha_dot,
+                                  PENDULUM_ENGAGE_ANGLE_DEG,
+                                  PENDULUM_ENGAGE_RATE_RADS) is True
 
 
 # ── control/pendulum.py — DerivativeEstimator ───────────────────────────────

@@ -25,7 +25,7 @@ from control.pendulum  import (
 )
 from config import (
     FC_SPEED, FC_ACCEL, FC_FORCE, WARMUP_CYCLES,
-    PENDULUM_VOLTAGE_LIMIT, PENDULUM_ENGAGE_ANGLE_DEG,
+    PENDULUM_VOLTAGE_LIMIT, PENDULUM_ENGAGE_ANGLE_DEG, PENDULUM_ENGAGE_RATE_RADS,
     IMPEDANCE_ENABLE_ANGLE_DEG, IMPEDANCE_ENABLE_RATE_RADS,
     IMPEDANCE_ENABLE_HOLD_CYCLES, BUMPLESS_TRANSFER_CYCLES,
 )
@@ -205,7 +205,12 @@ def _run_one_round(cfg: RoundConfig,
                 if mode is PendulumMode.SWINGUP:
                     voltage = swing_up_voltage(alpha, alpha_dot)
 
-                    if is_near_top(alpha, PENDULUM_ENGAGE_ANGLE_DEG):
+                    # 角度 + 角速度須同時達標才「接住」擺桿並切入平衡控制：起擺過程中
+                    # 擺桿每次擺盪都會高速路過頂端，若只看角度會誤判為已平衡（詳見
+                    # config.py::PENDULUM_ENGAGE_RATE_RADS 的說明）。
+                    if is_switch_eligible(alpha, alpha_dot,
+                                          PENDULUM_ENGAGE_ANGLE_DEG,
+                                          PENDULUM_ENGAGE_RATE_RADS):
                         mode = PendulumMode.BALANCE
                         deriv.reset()
                         stable_count = 0

@@ -62,6 +62,12 @@ FC_ALPHA_DOT = 100.0
 
 # ── 狀態機切換判定（PRD 3.2 / 5.1）────────────────────────────────────────────
 PENDULUM_ENGAGE_ANGLE_DEG    = 10.0   # 起擺 → 平衡 的進入角度（也是平衡 → 起擺的掉落角度）
+# 起擺過程中擺桿每次擺盪都會「路過」正上方附近，但此時角速度通常仍高達
+# 數十 rad/s，遠非 LQR 能夠接住的狀態；沒有這個角速度閘門，狀態機會在
+# 擺桿仍高速通過頂端時就誤判為「已平衡」而切入 LQR，導致 LQR 以飽和電壓
+# 對抗高速擺動、擾亂起擺能量累積，使擺桿永遠無法真正立起（起擺失敗的
+# 主因）。僅當角度與角速度同時達標才視為「可接住」，才切入平衡控制。
+PENDULUM_ENGAGE_RATE_RADS    = 2.0    # 起擺 → 平衡 的進入角速度容許範圍 [rad/s]
 IMPEDANCE_ENABLE_ANGLE_DEG   = 5.0    # 「切換至阻抗控制」按鈕致能角度容許範圍
 IMPEDANCE_ENABLE_RATE_RADS   = 0.5    # 按鈕致能角速度容許範圍 [rad/s]
 IMPEDANCE_ENABLE_HOLD_CYCLES = 100    # 需連續 N 個取樣週期穩定才致能按鈕
@@ -70,7 +76,9 @@ IMPEDANCE_ENABLE_HOLD_CYCLES = 100    # 需連續 N 個取樣週期穩定才致�
 BUMPLESS_TRANSFER_CYCLES = 50
 
 # 倒單擺專屬安全飽和上限（control/safety.py 使用）
-PENDULUM_VOLTAGE_LIMIT     = 8.0   # [V] 起擺/平衡期間電壓飽和上限
+# 15V 為原 balance_control_qube.py 對相同 BALANCE_K 增益實體驗證過的電壓上限；
+# 調低此值會削弱 LQR 接住/ 穩定擺桿的能力，非有實測根據不建議調低。
+PENDULUM_VOLTAGE_LIMIT     = 15.0  # [V] 起擺/平衡期間電壓飽和上限
 MAX_VOLTAGE_STEP_PER_CYCLE = 1.0   # [V] 每週期允許的最大電壓變化量（掉落衝擊 / 模式切換瞬間的保護）
 
 # ── GUI 更新速率 ───────────────────────────────────────────────────────────────

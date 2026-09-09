@@ -81,6 +81,12 @@ python main.py
 
 - **Swing-up**：能量法起擺（`control/pendulum.py::swing_up_voltage`），電壓上限
   `SWINGUP_VOLTAGE_LIMIT`（低於平衡/阻抗上限，降低起擺過程對機構的衝擊）。
+  切入 Balance 前須同時滿足角度（`PENDULUM_ENGAGE_ANGLE_DEG`）與角速度
+  （`PENDULUM_ENGAGE_RATE_RADS`）容許範圍——起擺過程中擺桿每次擺盪都會
+  「路過」頂端，但角速度往往高達數十 rad/s，只看角度會誤判為已平衡而過早
+  切入 LQR，導致 LQR 以飽和電壓對抗高速擺動、擾亂起擺能量累積，使擺桿
+  永遠立不起來。若實測仍擺不上去，可調高 `SWINGUP_GAIN` / `SWINGUP_VOLTAGE_LIMIT`
+  加大起擺力道，或調寬 `PENDULUM_ENGAGE_RATE_RADS` 讓 LQR 更早接手。
 - **Balance**：LQR 平衡（`BALANCE_K`，已於實體 QUBE-Servo 3 驗證），
   電壓上限 `PENDULUM_VOLTAGE_LIMIT`。
 - **Impedance**：切換瞬間記錄旋臂當下角度為新平衡點 `theta_d`，並以
@@ -163,7 +169,7 @@ balance_control_qube/
 | 外力估算 | >1.0 N·m | 本週期外力歸零（不停止） |
 | 暖機期 | 前 50 個週期（100ms） | 電流/外力檢查暫停 |
 | 起擺電壓 | ±3.0 V | 飽和（降低起擺衝擊） |
-| 平衡電壓 | ±8.0 V | 飽和 |
+| 平衡電壓 | ±15.0 V | 飽和（沿用原 balance_control_qube.py 已驗證上限） |
 | 電壓步階 | ±1.0 V / 週期 | 飽和（吸收掉落衝擊 / 切換瞬間扭矩突變） |
 
 「■ 停止」按鈕在任何狀態下皆為最高優先權，點擊後立即將馬達電壓設為 0。

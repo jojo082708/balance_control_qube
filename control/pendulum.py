@@ -118,6 +118,10 @@ def is_near_top(alpha: float, angle_tol_deg: float) -> bool:
 
 def is_switch_eligible(alpha: float, alpha_dot: float,
                        angle_tol_deg: float, rate_tol_rads: float) -> bool:
-    """PRD 3.2：角度與角速度須同時落在容許範圍內，才算「穩定平衡」。"""
+    """
+    角度與角速度須同時落在容許範圍內。用於兩處判定：
+    - 起擺 → 平衡：擺桿角速度必須夠慢才能被 LQR「接住」（PENDULUM_ENGAGE_RATE_RADS）
+    - 平衡 → 阻抗控制：PRD 3.2 的「穩定平衡」判定（IMPEDANCE_ENABLE_RATE_RADS）
+    """
     return (abs(math.degrees(alpha)) <= angle_tol_deg
             and abs(alpha_dot) <= rate_tol_rads)
