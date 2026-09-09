@@ -69,19 +69,33 @@ class DerivativeEstimator:
 
 
 def pendulum_energy(alpha: float, alpha_dot: float) -> float:
-    """E = 0.5·Jp·alpha_dot² + Mp·g·lp·cos(alpha)，於 alpha=0（正上方）最大。"""
+    """
+    E = 0.5·Jp·alpha_dot² + Mp·g·lp·cos(alpha)，於 alpha=0（正上方）最大。
+
+    與 Åström & Furuta (1996, "Swinging Up a Pendulum by Energy Control",
+    Eq. 2) 的 E = ½Jθ̇² + mgl(cosθ − 1) 相差一個常數 mgl：該文獻取 alpha=0
+    （正上方）時 E=0 為參考零點，本函式則直接回傳未平移的物理能量，兩者的
+    「能量誤差」在代數上完全等價（見 swing_up_voltage 推導）。
+    """
     return (0.5 * PENDULUM_INERTIA * alpha_dot ** 2
             + PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS * math.cos(alpha))
 
 
 def swing_up_voltage(alpha: float, alpha_dot: float) -> float:
     """
-    能量法起擺（energy-based swing-up, Åström–Furuta 型控制律）。
+    能量法起擺（Åström & Furuta, 1996, Eq. 8 的飽和控制律）：
 
-    u = sat( sign · μ·(E_ref − E)·sign(alpha_dot·cos(alpha)) )
+        u = sat_{nk}( k·(E − E0)·sign(alpha_dot·cos(alpha)) )
 
-    能量誤差 (E_ref − E) 隨擺桿接近正上方而收斂到 0，自然銜接 State 2（平衡）。
-    SWINGUP_DIRECTION_SIGN 為硬體極性修正項，若實測起擺能量不收斂請改為 -1.0。
+    文獻中 alpha=0（正上方）能量取 E0=0 為參考零點；本模組的 pendulum_energy()
+    改用未平移的物理能量（相差常數 E_ref = Mp·g·lp），故 (E − E0) = −(E_ref − E)，
+    展開後得到本函式實際計算的形式：
+
+        voltage = sat( −μ·(E_ref − E)·sign(alpha_dot·cos(alpha)) )
+
+    即 SWINGUP_DIRECTION_SIGN 的理論正確值為 -1.0（對應文獻的能量收斂方向），
+    此為 config.py 的預設值。若實體硬體的編碼器 / 馬達接線極性相反導致起擺
+    方向錯誤，才需要改為 +1.0（純屬硬體接線問題，與此處的能量控制推導無關）。
     """
     E_ref = PENDULUM_MASS * GRAVITY * PENDULUM_COM_RADIUS
     energy_error = E_ref - pendulum_energy(alpha, alpha_dot)
