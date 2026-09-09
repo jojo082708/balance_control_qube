@@ -16,6 +16,7 @@ from config import (
     BALANCE_K, SWINGUP_GAIN, SWINGUP_VOLTAGE_LIMIT, SWINGUP_DIRECTION_SIGN,
     PENDULUM_MASS, PENDULUM_COM_RADIUS, PENDULUM_INERTIA, GRAVITY,
     FC_THETA_DOT, FC_ALPHA_DOT,
+    PD_KP_THETA, PD_KD_THETA, PD_KP_ALPHA, PD_KD_ALPHA,
 )
 
 
@@ -109,6 +110,28 @@ def balance_voltage(theta: float, alpha: float,
     """LQR 平衡控制（參考點：theta=alpha=0，theta_dot=alpha_dot=0）。"""
     error   = -np.array([theta, alpha, theta_dot, alpha_dot])
     voltage = float(-np.dot(BALANCE_K, error))
+    return max(-voltage_limit, min(voltage_limit, voltage))
+
+
+def pd_balance_voltage(theta: float, alpha: float,
+                       theta_dot: float, alpha_dot: float,
+                       voltage_limit: float) -> float:
+    """
+    PD 平衡控制，增益與訊號接線沿用 Quanser 官方 QUBE-Servo 3 balance
+    control 教學範本（qs3_balance.slx / Lab Procedure - Balance Control）：
+
+        u = kp_theta·theta − kd_theta·theta_dot + kp_alpha·alpha − kd_alpha·alpha_dot
+
+    （範本內 kp 項直接使用 theta/alpha，kd 項則對 −theta/−alpha 微分後再乘
+    kd 增益，兩次負號相消後等效於上式；theta/alpha 皆為未額外翻轉的原始角度，
+    與 pal 讀值慣例是否完全相容尚待實機驗證，見 config.py 內的說明。）
+
+    ⚠ 尚未於本專案的 pal / Python 硬體堆疊實測，正負號慣例可能與 Quanser
+    的 MATLAB/QUARC 堆疊不同。建議先以較低的 voltage_limit 測試方向是否正確，
+    確認無誤後再提高至 PENDULUM_VOLTAGE_LIMIT。
+    """
+    voltage = (PD_KP_THETA * theta - PD_KD_THETA * theta_dot
+              + PD_KP_ALPHA * alpha - PD_KD_ALPHA * alpha_dot)
     return max(-voltage_limit, min(voltage_limit, voltage))
 
 

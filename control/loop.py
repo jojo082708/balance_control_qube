@@ -3,7 +3,7 @@ control/loop.py — 主控制迴圈（在 daemon thread 內執行）。
 
 實作 PRD「倒單擺與阻抗控制平滑切換系統」的核心狀態機：
     State 1  Swing-up   起擺 — 能量法將擺桿從下垂甩到頂端
-    State 2  Balance    平衡 — LQR 穩定擺桿於正上方
+    State 2  Balance    平衡 — PD 控制穩定擺桿於正上方（Quanser qs3_balance.slx 增益）
     State 3  Impedance  阻抗控制 — 使用者按鈕觸發後接管旋臂扭矩輸出
 
 依賴 SharedState 進行執行緒間通訊，不使用任何全域變數。
@@ -21,7 +21,7 @@ from control.safety    import SafetyChecker, VoltageStepLimiter
 from control.step      import StepContext, run_step
 from control.pendulum  import (
     PendulumMode, DerivativeEstimator, wrap_angle,
-    swing_up_voltage, balance_voltage, is_near_top, is_switch_eligible,
+    swing_up_voltage, pd_balance_voltage, is_near_top, is_switch_eligible,
 )
 from config import (
     FC_SPEED, FC_ACCEL, FC_FORCE, WARMUP_CYCLES,
@@ -218,9 +218,11 @@ def _run_one_round(cfg: RoundConfig,
                         pendulum_state_cb(mode.value, switch_enabled)
 
                 else:  # BALANCE
-                    # 平衡律使用旋轉臂角度的翻轉慣例（沿用已於硬體驗證的 BALANCE_K）
-                    voltage = balance_voltage(-theta, alpha, -theta_dot, alpha_dot,
-                                              PENDULUM_VOLTAGE_LIMIT)
+                    # PD 平衡律（Quanser qs3_balance.slx 增益）：theta/alpha 使用
+                    # 未翻轉的原始角度，與 qs3_balance.slx 的訊號接線一致（尚未
+                    # 於本專案的 pal 硬體堆疊實測，見 control/pendulum.py 的說明）。
+                    voltage = pd_balance_voltage(theta, alpha, theta_dot, alpha_dot,
+                                                 PENDULUM_VOLTAGE_LIMIT)
                     last_bal_voltage = voltage
 
                     if not is_near_top(alpha, PENDULUM_ENGAGE_ANGLE_DEG):

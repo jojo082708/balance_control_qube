@@ -14,13 +14,14 @@ from control.safety    import SafetyChecker, VoltageStepLimiter, saturate
 from control.step      import StepContext, run_step
 from control.pendulum  import (
     PendulumMode, DerivativeEstimator, wrap_angle,
-    pendulum_energy, swing_up_voltage, balance_voltage,
+    pendulum_energy, swing_up_voltage, balance_voltage, pd_balance_voltage,
     is_near_top, is_switch_eligible,
 )
 from config import (
     PENDULUM_MASS, GRAVITY, PENDULUM_COM_RADIUS,
     SWINGUP_VOLTAGE_LIMIT, PENDULUM_VOLTAGE_LIMIT,
     PENDULUM_ENGAGE_ANGLE_DEG, PENDULUM_ENGAGE_RATE_RADS,
+    PD_KP_THETA, PD_KD_THETA, PD_KP_ALPHA, PD_KD_ALPHA,
 )
 
 
@@ -291,6 +292,30 @@ class TestBalanceVoltage:
 
     def test_nonzero_alpha_produces_restoring_voltage(self):
         v = balance_voltage(0.0, 0.1, 0.0, 0.0, PENDULUM_VOLTAGE_LIMIT)
+        assert v != 0.0
+
+
+class TestPdBalanceVoltage:
+    """Quanser qs3_balance.slx PD balance law: u = kp_t*theta - kd_t*theta_dot
+    + kp_a*alpha - kd_a*alpha_dot."""
+
+    def test_zero_state_gives_zero_voltage(self):
+        v = pd_balance_voltage(0.0, 0.0, 0.0, 0.0, PENDULUM_VOLTAGE_LIMIT)
+        assert v == pytest.approx(0.0)
+
+    def test_matches_hand_computed_formula(self):
+        theta, alpha, theta_dot, alpha_dot = 0.05, -0.03, 0.2, -0.1
+        expected = (PD_KP_THETA * theta - PD_KD_THETA * theta_dot
+                   + PD_KP_ALPHA * alpha - PD_KD_ALPHA * alpha_dot)
+        v = pd_balance_voltage(theta, alpha, theta_dot, alpha_dot, 100.0)
+        assert v == pytest.approx(expected)
+
+    def test_voltage_clamped_to_limit(self):
+        v = pd_balance_voltage(5.0, 5.0, 5.0, 5.0, PENDULUM_VOLTAGE_LIMIT)
+        assert abs(v) <= PENDULUM_VOLTAGE_LIMIT + 1e-9
+
+    def test_nonzero_alpha_produces_restoring_voltage(self):
+        v = pd_balance_voltage(0.0, 0.1, 0.0, 0.0, PENDULUM_VOLTAGE_LIMIT)
         assert v != 0.0
 
 

@@ -45,7 +45,18 @@ GRAVITY              = 9.81                                   # [m/s²]
 
 # LQR 平衡增益（狀態順序：theta, alpha, theta_dot, alpha_dot）
 # 已於 QUBE-Servo 3 實體硬體驗證（沿用原 balance_control_qube.py 之增益）
+# 目前 control/loop.py 的 BALANCE 狀態預設呼叫 PD 控制律（見下方），此增益
+# 保留供 control/pendulum.py::balance_voltage() 使用，可隨時切回。
 BALANCE_K = np.array([-1.2247, 24.9044, -0.6877, 3.1321])
+
+# Quanser 官方 QUBE-Servo 3 balance control 教學範本（qs3_balance.slx）內建的
+# PD 平衡增益（未經本專案的 pal / Python 硬體堆疊實測驗證，正負號慣例是否與
+# LQR 相容尚待實機確認 — 建議先以低電壓上限測試方向是否正確）。
+# 對應 control/pendulum.py::pd_balance_voltage()。
+PD_KP_THETA = -2.0
+PD_KD_THETA = 30.0
+PD_KP_ALPHA = -2.0
+PD_KD_ALPHA = 2.5
 
 # 起擺（能量法, energy-based swing-up）
 # 控制律與 Åström & Furuta (1996, "Swinging Up a Pendulum by Energy
@@ -57,8 +68,10 @@ SWINGUP_VOLTAGE_LIMIT   = 3.0    # [V] 起擺期間電壓飽和上限 nk（低�
 SWINGUP_DIRECTION_SIGN  = 1.0
 
 # 倒單擺微分濾波器截止頻率 [Hz]
-FC_THETA_DOT = 50.0
-FC_ALPHA_DOT = 100.0
+# 與 qs3_balance.slx 的微分濾波器 50s/(s+50)（截止角頻率 50 rad/s）一致，
+# 換算為 Hz：50 / (2π) ≈ 7.9577 Hz。theta_dot、alpha_dot 共用同一組濾波器。
+FC_THETA_DOT = 50.0 / (2 * math.pi)
+FC_ALPHA_DOT = 50.0 / (2 * math.pi)
 
 # ── 狀態機切換判定（PRD 3.2 / 5.1）────────────────────────────────────────────
 PENDULUM_ENGAGE_ANGLE_DEG    = 10.0   # 起擺 → 平衡 的進入角度（也是平衡 → 起擺的掉落角度）

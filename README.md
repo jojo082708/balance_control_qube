@@ -86,9 +86,19 @@ python main.py
   「路過」頂端，但角速度往往高達數十 rad/s，只看角度會誤判為已平衡而過早
   切入 LQR，導致 LQR 以飽和電壓對抗高速擺動、擾亂起擺能量累積，使擺桿
   永遠立不起來。若實測仍擺不上去，可調高 `SWINGUP_GAIN` / `SWINGUP_VOLTAGE_LIMIT`
-  加大起擺力道，或調寬 `PENDULUM_ENGAGE_RATE_RADS` 讓 LQR 更早接手。
-- **Balance**：LQR 平衡（`BALANCE_K`，已於實體 QUBE-Servo 3 驗證），
-  電壓上限 `PENDULUM_VOLTAGE_LIMIT`。
+  加大起擺力道，或調寬 `PENDULUM_ENGAGE_RATE_RADS` 讓平衡控制更早接手。
+- **Balance**：PD 平衡控制（`control/pendulum.py::pd_balance_voltage`），增益
+  沿用 Quanser 官方 QUBE-Servo 3 balance control 教學範本（`qs3_balance.slx`）
+  內建的數值：`PD_KP_THETA=-2`、`PD_KD_THETA=30`、`PD_KP_ALPHA=-2`、
+  `PD_KD_ALPHA=2.5`，電壓上限 `PENDULUM_VOLTAGE_LIMIT`。
+  微分濾波器 `FC_THETA_DOT` / `FC_ALPHA_DOT` 已改為與該範本的 `50s/(s+50)`
+  濾波器相同的截止角頻率（50 rad/s）。
+  ⚠ **此增益尚未於本專案的 `pal` / Python 硬體堆疊實測**，正負號慣例是否與
+  Quanser 原本的 MATLAB/QUARC 堆疊相容仍待確認；建議首次上機時先把
+  `PENDULUM_VOLTAGE_LIMIT` 調低測試方向是否正確，確認擺桿受到的是「拉回」而
+  非「推開」的力，再逐步調回原本數值。原本已於硬體驗證的 LQR 仍保留在
+  `control/pendulum.py::balance_voltage`（配合 `BALANCE_K`），如需切回，
+  將 `control/loop.py` 的 BALANCE 分支改呼叫該函式即可。
 - **Impedance**：切換瞬間記錄旋臂當下角度為新平衡點 `theta_d`，並以
   `BUMPLESS_TRANSFER_CYCLES` 個週期將電壓由平衡控制輸出線性過渡至阻抗控制輸出。
   進入後不再對擺桿角度做任何補償，所有扭矩輸出僅由阻抗控制律與旋臂運動學決定，
